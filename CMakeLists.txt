@@ -133,9 +133,17 @@ if (BUILD_FRAMEWORK)
 endif ()
 
 
-set(VERSION_MAJOR "2")
-set(VERSION_MINOR "6")
-set(VERSION_PATCH "0")
+# parse version numbers from freetype.h
+file(STRINGS include/freetype/freetype.h freetype_version_defs
+  REGEX "^[ \t]*#define[ \t]+FREETYPE_(MAJOR|MINOR|PATCH)[ \t]+[0-9]+[ \t]*$")
+foreach(i MAJOR MINOR PATCH)
+  string(REGEX MATCH "FREETYPE_${i}[ \t]+([0-9]+)" _ "${freetype_version_defs}")
+  if(CMAKE_MATCH_1 STREQUAL "")
+    message(FATAL_ERROR "Can't parse FREETYPE_${i} from freetype.h")
+  endif()
+  set(VERSION_${i} "${CMAKE_MATCH_1}")
+  string(REGEX MATCH "FREETYPE_PATCH[ \t]+([0-9]+)" _ "${freetype_version_defs}")
+endforeach()
 set(PROJECT_VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH})
 
 
