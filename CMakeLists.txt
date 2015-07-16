@@ -309,6 +309,7 @@ add_library(freetype
   ${BASE_SRCS}
 )
 
+set_target_properties(freetype PROPERTIES DEBUG_POSTFIX _d)
 
 if (BUILD_FRAMEWORK)
   set_property(SOURCE ${PUBLIC_CONFIG_HEADERS}
@@ -328,22 +329,84 @@ if (MSVC)
     COMPILE_FLAGS /Fd"$(IntDir)$(TargetName).pdb")
 endif ()
 
+# if CMake >= 2.8.12
+# install config-module with generated import library script
+if(NOT CMAKE_VERSION VERSION_LESS 2.8.12)
+
+  target_include_directories(freetype INTERFACE
+    $<INSTALL_INTERFACE:include>)
+
+  set(CONFIG_DEST "lib/cmake/freetype")
+  set(MAYBE_EXPORT EXPORT freetype-targets)
+  install(EXPORT freetype-targets DESTINATION "${CONFIG_DEST}")
+
+  # install CMakeFindDependencyMacro for CMake versions < 3.0
+  install(FILES builds/cmake/CMakeFindDependencyMacro.cmake
+    DESTINATION "${CONFIG_DEST}")
+
+  # write config module
+  # only need dependency lookup if shared
+  if(BUILD_SHARED_LIBS)
+    set(CONFIG_MODULE_CONTENT "")
+  else()
+    set(CONFIG_MODULE_DEPS "")
+    foreach(i ZLIB BZip2 PNG HarfBuzz)
+      string(TOUPPER "${i}" I)
+      if(${I}_FOUND)
+        list(APPEND CONFIG_MODULE_DEPS
+          "find_dependency(${i})")
+      endif()
+    endforeach()
+
+    # include CMakeFindDependencyMacro if needed
+    if(CONFIG_MODULE_DEPS)
+      set(CONFIG_MODULE_PRELUDE
+        "if(CMAKE_VERSION VERSION_LESS 3.0)"
+        "  include(\${CMAKE_CURRENT_LIST_DIR}/CMakeFindDependencyMacro.cmake)"
+        "else()"
+        "  include(CMakeFindDependencyMacro)"
+        "endif()")
+    else()
+      set(CONFIG_MODULE_PRELUDE "")
+    endif()
+
+    set(CONFIG_MODULE_CONTENT ${CONFIG_MODULE_PRELUDE} ${CONFIG_MODULE_DEPS})
+  endif()
+
+  # write and install actual config module
+  list(APPEND CONFIG_MODULE_CONTENT
+    "include(\${CMAKE_CURRENT_LIST_DIR}/freetype-targets.cmake")
+
+  string(REPLACE ";" "\n" CONFIG_MODULE_CONTENT "${CONFIG_MODULE_CONTENT}")
+
+  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/hide/freetype-config.cmake
+    "${CONFIG_MODULE_CONTENT}")
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/hide/freetype-config.cmake
+    DESTINATION "${CONFIG_DEST}")
+
+  # set link mode for target_link_libraries
+  set(MAYBE_PRIVATE PRIVATE)
+else()
+  set(MAYBE_EXPORT "")
+  set(MAYBE_PRIVATE "")
+endif()
+
 
 if (ZLIB_FOUND)
-  target_link_libraries(freetype ${ZLIB_LIBRARIES})
+  target_link_libraries(freetype ${MAYBE_PRIVATE} ${ZLIB_LIBRARIES})
   include_directories(${ZLIB_INCLUDE_DIRS})
 endif ()
 if (BZIP2_FOUND)
-  target_link_libraries(freetype ${BZIP2_LIBRARIES})
+  target_link_libraries(freetype ${MAYBE_PRIVATE} ${BZIP2_LIBRARIES})
   include_directories(${BZIP2_INCLUDE_DIR}) # not BZIP2_INCLUDE_DIRS
 endif ()
 if (PNG_FOUND)
   add_definitions(${PNG_DEFINITIONS})
-  target_link_libraries(freetype ${PNG_LIBRARIES})
+  target_link_libraries(freetype ${MAYBE_PRIVATE} ${PNG_LIBRARIES})
   include_directories(${PNG_INCLUDE_DIRS})
 endif ()
 if (HARFBUZZ_FOUND)
-  target_link_libraries(freetype ${HARFBUZZ_LIBRARIES})
+  target_link_libraries(freetype ${MAYBE_PRIVATE} ${HARFBUZZ_LIBRARIES})
   include_directories(${HARFBUZZ_INCLUDE_DIRS})
 endif ()
 
@@ -362,6 +425,7 @@ install(FILES
   DESTINATION include/freetype2/freetype/config
 )
 install(TARGETS freetype
+  ${MAYBE_EXPORT}
   RUNTIME DESTINATION bin
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
